@@ -1,0 +1,227 @@
+// notifications.cpp
+// Compile: cl /EHsc notifications.cpp user32.lib shell32.lib
+
+#include <windows.h>
+#include <shellapi.h>
+#include <iostream>
+#include <string>
+#include <map>
+
+struct Notif {
+    std::string title;
+    std::string message;
+    int icon;
+    int btns;
+    bool tray;
+};
+
+std::map<int, Notif> saved_notifs;
+int next_id = 6;
+
+int show_dialog(const Notif& n) {
+    UINT icon = 0;
+    if (n.icon == 1) icon = MB_ICONINFORMATION;
+    if (n.icon == 2) icon = MB_ICONWARNING;
+    if (n.icon == 3) icon = MB_ICONERROR;
+    
+    UINT btns = MB_OK;
+    if (n.btns == 2) btns = MB_OKCANCEL;
+    if (n.btns == 3) btns = MB_YESNO;
+    if (n.btns == 4) btns = MB_YESNOCANCEL;
+    if (n.btns == 5) btns = MB_RETRYCANCEL;
+    
+    return MessageBoxA(
+        NULL,
+        n.message.c_str(),
+        n.title.c_str(),
+        icon | btns | MB_TOPMOST
+    );
+}
+
+void show_tray(const Notif& n) {
+    NOTIFYICONDATAA nid = {0};
+    nid.cbSize = sizeof(NOTIFYICONDATAA);
+    nid.uID = 1;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO;
+    nid.uCallbackMessage = WM_USER + 1;
+    
+    if (n.icon == 2) 
+        nid.hIcon = LoadIconA(NULL, MAKEINTRESOURCEA(IDI_WARNING));
+    else if (n.icon == 3) 
+        nid.hIcon = LoadIconA(NULL, MAKEINTRESOURCEA(IDI_ERROR));
+    else
+        nid.hIcon = LoadIconA(NULL, MAKEINTRESOURCEA(IDI_INFORMATION));
+
+    strncpy_s(nid.szTip, "Notification", _TRUNCATE);
+    strncpy_s(nid.szInfoTitle, n.title.c_str(), _TRUNCATE);
+    strncpy_s(nid.szInfo, n.message.c_str(), _TRUNCATE);
+
+    UINT iconType = NIIF_INFO;
+    if (n.icon == 2)
+        iconType = NIIF_WARNING;
+    else if (n.icon == 3)
+        iconType = NIIF_ERROR;
+    
+    nid.dwInfoFlags = iconType;
+    
+    Shell_NotifyIconA(NIM_ADD, &nid);
+    Shell_NotifyIconA(NIM_MODIFY, &nid);
+    Sleep(5000);
+    Shell_NotifyIconA(NIM_DELETE, &nid);
+}
+
+void show_notification(const Notif& n) {
+    if (n.tray) {
+        show_tray(n);
+    } else {
+        int result = show_dialog(n);
+        
+        if (result == IDYES) std::cout << "Clicked: Yes\n";
+        else if (result == IDNO) std::cout << "Clicked: No\n";
+        else if (result == IDCANCEL) std::cout << "Clicked: Cancel\n";
+        else if (result == IDRETRY) std::cout << "Clicked: Retry\n";
+        else if (result == IDOK) std::cout << "Clicked: OK\n";
+    }
+}
+
+Notif create_custom() {
+    Notif n;
+    
+    std::cout << "Title: ";
+    std::getline(std::cin, n.title);
+    if (n.title.empty()) 
+        n.title = "Notification";
+
+    std::cout << "Message: ";
+    std::getline(std::cin, n.message);
+    if (n.message.empty()) 
+        n.message = "[empty]";
+    
+    std::cout << "Icon type:\n";
+    std::cout << "  1) Information\n";
+    std::cout << "  2) Warning\n";
+    std::cout << "  3) Error\n";
+    std::cout << "Choice: ";
+    std::cin >> n.icon;
+    std::cin.ignore(10000, '\n');
+    
+    if (n.icon < 1 || n.icon > 3)
+        n.icon = 1;
+    
+    std::cout << "Notification type:\n";
+    std::cout << "  1) Dialog\n";
+    std::cout << "  2) Tray\n";
+    std::cout << "Choice: ";
+    int choice;
+    std::cin >> choice;
+    std::cin.ignore(10000, '\n');
+    
+    n.tray = (choice == 2);
+    
+    if (!n.tray) {
+        std::cout << "Button type:\n";
+        std::cout << "  1) OK\n";
+        std::cout << "  2) OK/Cancel\n";
+        std::cout << "  3) Yes/No\n";
+        std::cout << "  4) Yes/No/Cancel\n";
+        std::cout << "  5) Retry/Cancel\n";
+        std::cout << "Choice: ";
+        std::cin >> n.btns;
+        std::cin.ignore(10000, '\n');
+        
+        if (n.btns < 1 || n.btns > 5)
+            n.btns = 1;
+    } else {
+        n.btns = 1;
+    }
+    
+    return n;
+}
+
+int menu() {
+    std::cout << "\n=== NOTIFICATION MANAGER ===\n";
+    std::cout << "  1) Information message\n";
+    std::cout << "  2) Warning message\n";
+    std::cout << "  3) Error message\n";
+    std::cout << "  4) Custom notification\n";
+    std::cout << "  5) Create and save notification\n";
+    
+    for (auto it = saved_notifs.begin(); it != saved_notifs.end(); it++) {
+        std::cout << "  " << it->first << ") Saved #" << (it->first - 5) << "\n";
+    }
+    
+    std::cout << "  0) Exit\n";
+    std::cout << "Choice: ";
+    
+    int choice;
+    std::cin >> choice;
+    std::cin.ignore(10000, '\n');
+    
+    return choice;
+}
+
+int main() {
+    std::cout << "=== NOTIFICATION MANAGER v1.0 ===\n\n";
+
+    while (1) {
+        int choice = menu();
+        if (choice == 0) break;
+
+        Notif n;
+        int id;
+        
+        switch (choice) {
+        case 1:
+            n.title = "Information";
+            n.message = "Operation completed successfully.";
+            n.icon = 1;
+            n.btns = 1;
+            n.tray = false;
+            show_notification(n);
+            break;
+
+        case 2:
+            n.title = "Warning";
+            n.message = "Some issues were detected. Continue?";
+            n.icon = 2;
+            n.btns = 3;
+            n.tray = false;
+            show_notification(n);
+            break;
+
+        case 3:
+            n.title = "Error";
+            n.message = "An error occurred during operation.";
+            n.icon = 3;
+            n.btns = 1;
+            n.tray = false;
+            show_notification(n);
+            break;
+
+        case 4:
+            n = create_custom();
+            show_notification(n);
+            break;
+            
+        case 5:
+            {
+                n = create_custom();
+                id = next_id++;
+                saved_notifs[id] = n;
+                std::cout << "Notification saved as #" << id << "\n";
+            }
+            break;
+            
+        default:
+            if (saved_notifs.find(choice) != saved_notifs.end()) {
+                show_notification(saved_notifs[choice]);
+            } else {
+                std::cout << "Invalid choice.\n";
+            }
+            break;
+        }
+    }
+
+    std::cout << "\nExiting program.\n";
+    return 0;
+}
